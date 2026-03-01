@@ -28,7 +28,7 @@ export function formatReceipt(receipt) {
 🏷️ Category: ${category}
 📦 Items: ${itemCount} detected
 
-View dashboard: http://localhost:${process.env.PORT || 3000}`;
+View dashboard: ${process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`}`;
 }
 
 /**
@@ -56,7 +56,7 @@ export function formatSummary(data) {
 *By category:*
 ${categoryLines || '  No data yet'}
 
-View details: http://localhost:${process.env.PORT || 3000}`;
+View details: ${process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`}`;
 }
 
 /**
