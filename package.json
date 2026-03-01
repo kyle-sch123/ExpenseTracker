@@ -10,7 +10,7 @@
     "db:deploy": "npx prisma migrate deploy",
     "db:reset": "npx prisma migrate reset --force",
     "db:studio": "npx prisma studio",
-    "build": "npx prisma generate && npx prisma migrate deploy"
+    "build": "npx prisma generate && npx prisma db push"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
