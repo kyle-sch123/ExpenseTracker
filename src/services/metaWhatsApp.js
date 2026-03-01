@@ -1,4 +1,4 @@
-const BASE = 'https://graph.facebook.com/v19.0';
+const BASE = 'https://graph.facebook.com/v21.0';
 
 function token()   { return process.env.WHATSAPP_TOKEN; }
 function phoneId() { return process.env.WHATSAPP_PHONE_ID; }
