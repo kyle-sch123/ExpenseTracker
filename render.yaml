@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: receipt-tracker
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      # Set these in the Render dashboard (Settings → Environment):
+      # APP_URL, GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY,
+      # DATABASE_URL, WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, VERIFY_TOKEN

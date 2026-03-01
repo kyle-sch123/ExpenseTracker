@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Receipt Tracker</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-mark">◈</span>
+          <span class="logo-text">receipts</span>
+        </div>
+      </div>
+      <nav class="header-nav">
+        <a href="receipts.html" class="nav-link">All Receipts →</a>
+      </nav>
+    </header>
+
+    <main class="main">
+      <div class="period-bar">
+        <button class="period-btn" id="prevMonth" title="Previous month">‹</button>
+        <div class="period-label"><span id="periodText">Loading…</span></div>
+        <button class="period-btn" id="nextMonth" title="Next month">›</button>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card stat-card--primary">
+          <div class="stat-label">Total Spent</div>
+          <div class="stat-value" id="totalSpent">R 0.00</div>
+          <div class="stat-sub">this month</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Receipts</div>
+          <div class="stat-value stat-value--mono" id="receiptCount">0</div>
+          <div class="stat-sub">transactions</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Average</div>
+          <div class="stat-value stat-value--mono" id="avgReceipt">R 0.00</div>
+          <div class="stat-sub">per receipt</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Top Category</div>
+          <div class="stat-value stat-value--category" id="topCategory">—</div>
+          <div class="stat-sub" id="topCategoryAmount">no data yet</div>
+        </div>
+      </div>
+
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3 class="chart-title">By Category</h3>
+          </div>
+          <div class="chart-wrap chart-wrap--donut">
+            <canvas id="categoryChart"></canvas>
+            <div class="donut-center">
+              <div class="donut-total" id="donutTotal">R 0</div>
+              <div class="donut-label">total</div>
+            </div>
+          </div>
+          <div class="chart-legend" id="categoryLegend"></div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3 class="chart-title">Spending Trend</h3>
+            <span class="chart-sub">Last 6 months</span>
+          </div>
+          <div class="chart-wrap chart-wrap--bar">
+            <canvas id="trendChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <h3 class="section-title">Recent Activity</h3>
+          <a href="receipts.html" class="section-link">View all →</a>
+        </div>
+        <div class="table-wrap">
+          <table class="receipts-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Merchant</th>
+                <th>Category</th>
+                <th class="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody id="recentReceipts">
+              <tr class="table-empty">
+                <td colspan="4">Loading…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

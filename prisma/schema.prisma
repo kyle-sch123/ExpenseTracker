@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Receipt {
+  id              String        @id @default(cuid())
+  merchant        String
+  merchantAddress String?
+  date            DateTime
+  time            String?
+  subtotal        Float?
+  tax             Float?
+  tip             Float?
+  total           Float
+  paymentMethod   String?
+  currency        String        @default("ZAR")
+  category        String
+  imageUrl        String?
+  rawJson         String?
+  createdAt       DateTime      @default(now())
+  items           ReceiptItem[]
+
+  @@index([date])
+  @@index([category])
+}
+
+model ReceiptItem {
+  id        String  @id @default(cuid())
+  receiptId String
+  receipt   Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  name      String
+  quantity  Int     @default(1)
+  unitPrice Float
+  total     Float
+}
