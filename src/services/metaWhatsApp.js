@@ -9,6 +9,7 @@ function phoneId() { return process.env.WHATSAPP_PHONE_ID; }
  * @param {string} text - message body
  */
 export async function sendMessage(to, text) {
+  console.log(`[Meta] sendMessage to=${to} phoneId=${phoneId()} tokenSet=${!!token()}`);
   const res = await fetch(`${BASE}/${phoneId()}/messages`, {
     method: 'POST',
     headers: {
@@ -25,10 +26,13 @@ export async function sendMessage(to, text) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    console.error(`[Meta] sendMessage failed: status=${res.status}`, JSON.stringify(err));
     throw new Error(`WhatsApp send failed: ${JSON.stringify(err)}`);
   }
 
-  return res.json();
+  const data = await res.json();
+  console.log(`[Meta] sendMessage success: messageId=${data?.messages?.[0]?.id}`);
+  return data;
 }
 
 /**
@@ -38,22 +42,32 @@ export async function sendMessage(to, text) {
  */
 export async function downloadMedia(mediaId) {
   // Step 1: get the download URL
+  console.log(`[Meta] downloadMedia: fetching URL for mediaId=${mediaId}`);
   const urlRes = await fetch(`${BASE}/${mediaId}`, {
     headers: { Authorization: `Bearer ${token()}` },
   });
 
-  if (!urlRes.ok) throw new Error(`Failed to fetch media URL for ${mediaId}`);
+  if (!urlRes.ok) {
+    const body = await urlRes.text().catch(() => '');
+    console.error(`[Meta] downloadMedia URL fetch failed: status=${urlRes.status} body=${body}`);
+    throw new Error(`Failed to fetch media URL for ${mediaId}`);
+  }
 
   const { url, mime_type: mimeType } = await urlRes.json();
+  console.log(`[Meta] downloadMedia: got URL, mimeType=${mimeType}`);
 
   // Step 2: download the actual bytes
   const imgRes = await fetch(url, {
     headers: { Authorization: `Bearer ${token()}` },
   });
 
-  if (!imgRes.ok) throw new Error(`Failed to download media from ${url}`);
+  if (!imgRes.ok) {
+    console.error(`[Meta] downloadMedia image fetch failed: status=${imgRes.status}`);
+    throw new Error(`Failed to download media from ${url}`);
+  }
 
   const arrayBuf = await imgRes.arrayBuffer();
+  console.log(`[Meta] downloadMedia: downloaded ${arrayBuf.byteLength} bytes`);
   return {
     buffer:   Buffer.from(arrayBuf),
     mimeType: mimeType || 'image/jpeg',

@@ -71,7 +71,7 @@ function renderReceipts(receipts) {
       <div class="receipt-row" onclick="toggleCard('${r.id}')">
         <span class="receipt-date">${fmtDate(r.date)}</span>
         <span class="receipt-merchant">${escHtml(r.merchant)}</span>
-        ${badgeHtml(r.category)}
+        ${badgeHtml(r.category)}${!r.imageUrl ? '<span class="badge badge-manual">Manual</span>' : ''}
         <span class="receipt-items-count">${r.items?.length || 0} items</span>
         <span class="receipt-total">${fmt(r.total)}</span>
         <span class="receipt-expand-icon">›</span>
@@ -217,7 +217,18 @@ window.deleteReceipt = async function(e, id) {
 
 function closeModal() {
   document.getElementById('editModal').classList.remove('is-open');
+  document.getElementById('addExpenseModal').classList.remove('is-open');
   editingId = null;
+}
+
+function openAddExpense() {
+  document.getElementById('addMerchant').value = '';
+  document.getElementById('addTotal').value = '';
+  document.getElementById('addCategory').value = 'groceries';
+  document.getElementById('addPayment').value = 'Card';
+  document.getElementById('addDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('addExpenseModal').classList.add('is-open');
+  document.getElementById('addMerchant').focus();
 }
 
 document.getElementById('editForm')?.addEventListener('submit', async e => {
@@ -251,6 +262,38 @@ document.getElementById('editModal')?.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeModal();
+});
+
+// ── Add Expense Modal ────────────────────────────────────────────────────────
+
+document.getElementById('addExpenseBtn')?.addEventListener('click', openAddExpense);
+document.getElementById('closeAddModal')?.addEventListener('click', closeModal);
+document.getElementById('cancelAdd')?.addEventListener('click', closeModal);
+document.getElementById('addExpenseModal')?.addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+document.getElementById('addExpenseForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    merchant:      document.getElementById('addMerchant').value,
+    total:         document.getElementById('addTotal').value,
+    category:      document.getElementById('addCategory').value,
+    paymentMethod: document.getElementById('addPayment').value,
+    date:          document.getElementById('addDate').value || undefined,
+  };
+  try {
+    const res = await fetch('/api/receipts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error();
+    closeModal();
+    load();
+  } catch {
+    alert('Failed to add expense.');
+  }
 });
 
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -299,3 +342,9 @@ async function load() {
 }
 
 load();
+
+// Auto-open add expense modal if navigated with #add hash
+if (window.location.hash === '#add') {
+  openAddExpense();
+  history.replaceState(null, '', window.location.pathname);
+}

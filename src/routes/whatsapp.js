@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { processReceipt } from '../receiptProcessor.js';
 import { sendMessage, downloadMedia } from '../services/metaWhatsApp.js';
-import { formatReceipt, formatSummary, formatReceiptList, formatHelp } from '../utils/formatter.js';
+import { formatReceipt, formatSummary, formatReceiptList, formatHelp, formatExpensePrompt, formatManualReceipt, CATEGORIES, PAYMENT_METHODS } from '../utils/formatter.js';
+import { getSession, setSession, clearSession } from '../services/conversationState.js';
 import prisma from '../db.js';
 
 const router = Router();
@@ -28,23 +29,36 @@ router.post('/', async (req, res) => {
   // Acknowledge immediately — Meta requires a 200 within 20s
   res.sendStatus(200);
 
+  console.log('[WhatsApp] Webhook POST received. Body:', JSON.stringify(req.body, null, 2));
+
   try {
     const entry   = req.body?.entry?.[0];
     const changes = entry?.changes?.[0];
     const value   = changes?.value;
 
     // Ignore status updates
-    if (value?.statuses) return;
+    if (value?.statuses) {
+      console.log('[WhatsApp] Ignoring status update');
+      return;
+    }
 
     const message = value?.messages?.[0];
-    if (!message) return;
+    if (!message) {
+      console.log('[WhatsApp] No message in payload — value:', JSON.stringify(value));
+      return;
+    }
 
-    const from = message.from; // sender's phone number
+    const from = message.from;
+    console.log(`[WhatsApp] Message from=${from} type=${message.type}`);
 
     if (message.type === 'image') {
+      console.log(`[WhatsApp] Image mediaId=${message.image.id}`);
       await handleReceiptImage(from, message.image.id);
     } else if (message.type === 'text') {
+      console.log(`[WhatsApp] Text body="${message.text.body}"`);
       await handleTextCommand(from, message.text.body || '');
+    } else {
+      console.log(`[WhatsApp] Unhandled message type: ${message.type}`);
     }
   } catch (err) {
     console.error('[WhatsApp] Webhook handler error:', err);
@@ -55,27 +69,54 @@ router.post('/', async (req, res) => {
 
 async function handleReceiptImage(from, mediaId) {
   try {
+    console.log(`[WhatsApp] handleReceiptImage: sending ack to ${from}`);
     await sendMessage(from, '📸 Got your receipt! Processing...');
 
+    console.log(`[WhatsApp] Downloading media ${mediaId}...`);
     const { buffer, mimeType } = await downloadMedia(mediaId);
+    console.log(`[WhatsApp] Downloaded media: ${buffer.length} bytes, mimeType=${mimeType}`);
+
     const base64 = buffer.toString('base64');
 
+    console.log('[WhatsApp] Starting receipt processing...');
     const receipt = await processReceipt({ base64, mimeType });
+    console.log(`[WhatsApp] Receipt processed: id=${receipt.id} merchant="${receipt.merchant}" total=${receipt.total}`);
 
     await sendMessage(from, formatReceipt(receipt));
+    console.log('[WhatsApp] Receipt reply sent successfully');
   } catch (err) {
-    console.error('[WhatsApp] Receipt processing error:', err);
+    console.error('[WhatsApp] Receipt processing error:', err.message, err.stack);
     const msg = err.message?.includes('not a receipt')
       ? "❌ That doesn't look like a receipt. Please send a clear photo of a receipt."
       : '❌ Could not process that receipt. Please try again with a clearer photo.';
-    await sendMessage(from, msg).catch(() => {});
+    await sendMessage(from, msg).catch(e => console.error('[WhatsApp] Failed to send error reply:', e.message));
   }
 }
 
 async function handleTextCommand(from, body) {
   const text = body.trim().toLowerCase();
 
-  if (text === 'summary' || text === '/summary') {
+  // Cancel active session
+  if (text === 'cancel') {
+    if (getSession(from)) {
+      clearSession(from);
+      await sendMessage(from, '❌ Expense entry cancelled.');
+      return;
+    }
+  }
+
+  // Check for active expense session first
+  const session = getSession(from);
+  if (session) {
+    await handleExpenseStep(from, body.trim(), session);
+    return;
+  }
+
+  // Start expense flow
+  if (text === 'expense' || text === 'add' || text === '/expense' || text === '/add') {
+    setSession(from, { step: 'amount', data: {} });
+    await sendMessage(from, formatExpensePrompt('start'));
+  } else if (text === 'summary' || text === '/summary') {
     await handleSummary(from);
   } else if (text.startsWith('search ') || text.startsWith('/search ')) {
     const term = text.replace(/^\/?search\s+/, '').trim();
@@ -85,8 +126,94 @@ async function handleTextCommand(from, body) {
   } else if (text === 'dashboard' || text === '/dashboard') {
     const url = process.env.APP_URL || 'https://your-app.onrender.com';
     await sendMessage(from, `🌐 Your dashboard:\n${url}`);
+  } else if (text === 'help' || text === '/help') {
+    await sendMessage(from, formatHelp());
   } else {
     await sendMessage(from, formatHelp());
+  }
+}
+
+// ── Guided expense flow ──────────────────────────────────────────────────
+
+async function handleExpenseStep(from, input, session) {
+  const { step, data } = session;
+
+  switch (step) {
+    case 'amount': {
+      const amount = parseFloat(input.replace(/[^0-9.]/g, ''));
+      if (isNaN(amount) || amount <= 0) {
+        await sendMessage(from, '⚠️ Please enter a valid amount (e.g. 150.50)');
+        return;
+      }
+      data.amount = amount;
+      setSession(from, { step: 'category', data });
+      await sendMessage(from, formatExpensePrompt('category'));
+      break;
+    }
+
+    case 'category': {
+      let category = null;
+      const num = parseInt(input);
+      if (num >= 1 && num <= CATEGORIES.length) {
+        category = CATEGORIES[num - 1];
+      } else {
+        const lower = input.toLowerCase();
+        category = CATEGORIES.find(c => c === lower);
+      }
+      if (!category) {
+        await sendMessage(from, `⚠️ Please pick a number (1-${CATEGORIES.length}) or type the category name.`);
+        return;
+      }
+      data.category = category;
+      setSession(from, { step: 'payment', data });
+      await sendMessage(from, formatExpensePrompt('payment'));
+      break;
+    }
+
+    case 'payment': {
+      let payment = null;
+      const num = parseInt(input);
+      if (num >= 1 && num <= PAYMENT_METHODS.length) {
+        payment = PAYMENT_METHODS[num - 1];
+      } else {
+        const lower = input.toLowerCase();
+        payment = PAYMENT_METHODS.find(m => m.toLowerCase() === lower);
+      }
+      if (!payment) {
+        await sendMessage(from, `⚠️ Please pick a number (1-${PAYMENT_METHODS.length}) or type the method.`);
+        return;
+      }
+      data.paymentMethod = payment;
+      setSession(from, { step: 'merchant', data });
+      await sendMessage(from, formatExpensePrompt('merchant'));
+      break;
+    }
+
+    case 'merchant': {
+      const merchant = input.toLowerCase() === 'skip' ? 'Manual expense' : input;
+      data.merchant = merchant;
+
+      // Save to database
+      try {
+        const receipt = await prisma.receipt.create({
+          data: {
+            merchant: data.merchant,
+            total: data.amount,
+            category: data.category,
+            paymentMethod: data.paymentMethod,
+            currency: 'ZAR',
+            date: new Date(),
+          },
+        });
+        clearSession(from);
+        await sendMessage(from, formatManualReceipt(receipt));
+      } catch (err) {
+        console.error('[WhatsApp] Manual expense save error:', err);
+        clearSession(from);
+        await sendMessage(from, '❌ Failed to save expense. Please try again.');
+      }
+      break;
+    }
   }
 }
 

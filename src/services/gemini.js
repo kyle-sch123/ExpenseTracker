@@ -60,8 +60,10 @@ export async function extractReceiptData(base64Image, mimeType) {
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
+      console.log(`[Gemini] Attempt ${attempt}: calling generateContent, imageSize=${base64Image.length} chars`);
       const result = await model.generateContent([EXTRACTION_PROMPT, imagePart]);
       const text = result.response.text().trim();
+      console.log(`[Gemini] Raw response (first 300 chars): ${text.slice(0, 300)}`);
 
       // Strip markdown code fences if present
       const cleaned = text
@@ -70,6 +72,7 @@ export async function extractReceiptData(base64Image, mimeType) {
         .trim();
 
       const parsed = JSON.parse(cleaned);
+      console.log(`[Gemini] Parsed OK: merchant="${parsed.merchant}" total=${parsed.total} category=${parsed.category}`);
 
       if (parsed.error === 'not_a_receipt') {
         throw new Error('Image does not appear to be a receipt');

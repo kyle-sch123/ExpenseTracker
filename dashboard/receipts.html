@@ -25,6 +25,7 @@
       </div>
 
       <div class="filter-bar">
+        <button class="btn btn-accent btn-sm" id="addExpenseBtn">+ Add Expense</button>
         <div class="search-wrap">
           <span class="search-icon">⌕</span>
           <input
@@ -101,6 +102,56 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="cancelEdit">Cancel</button>
           <button type="submit" class="btn btn-accent">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Expense Modal -->
+  <div class="modal-overlay" id="addExpenseModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">Add Expense</h3>
+        <button class="modal-close" id="closeAddModal" aria-label="Close">×</button>
+      </div>
+      <form class="modal-form" id="addExpenseForm">
+        <div class="form-row">
+          <label class="form-label" for="addMerchant">Merchant / Description</label>
+          <input type="text" class="form-input" id="addMerchant" required autocomplete="off" placeholder="e.g. Woolworths">
+        </div>
+        <div class="form-row">
+          <label class="form-label" for="addTotal">Amount (R)</label>
+          <input type="number" step="0.01" min="0.01" class="form-input" id="addTotal" required placeholder="0.00">
+        </div>
+        <div class="form-row">
+          <label class="form-label" for="addCategory">Category</label>
+          <select class="form-input" id="addCategory" required>
+            <option value="groceries">Groceries</option>
+            <option value="dining">Dining</option>
+            <option value="shopping">Shopping</option>
+            <option value="gas">Gas</option>
+            <option value="pharmacy">Pharmacy</option>
+            <option value="entertainment">Entertainment</option>
+            <option value="utilities">Utilities</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label" for="addPayment">Payment Method</label>
+          <select class="form-input" id="addPayment">
+            <option value="Cash">Cash</option>
+            <option value="Card" selected>Card</option>
+            <option value="Online">Online</option>
+            <option value="EFT">EFT</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label" for="addDate">Date</label>
+          <input type="date" class="form-input" id="addDate">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancelAdd">Cancel</button>
+          <button type="submit" class="btn btn-accent">Add Expense</button>
         </div>
       </form>
     </div>

@@ -68,6 +68,33 @@ router.get('/summary', async (req, res) => {
   }
 });
 
+// POST /api/receipts — Manual expense entry from dashboard
+router.post('/receipts', async (req, res) => {
+  try {
+    const { merchant, total, category, paymentMethod, date } = req.body;
+
+    if (!merchant || !total || !category) {
+      return res.status(400).json({ error: 'merchant, total, and category are required' });
+    }
+
+    const receipt = await prisma.receipt.create({
+      data: {
+        merchant,
+        total: Number(total),
+        category,
+        paymentMethod: paymentMethod || null,
+        currency: 'ZAR',
+        date: date ? new Date(date) : new Date(),
+      },
+    });
+
+    res.status(201).json(receipt);
+  } catch (err) {
+    console.error('[API] POST /receipts error:', err);
+    res.status(500).json({ error: 'Failed to create receipt' });
+  }
+});
+
 // GET /api/receipts?page=1&limit=20&category=&search=&sort=date
 router.get('/receipts', async (req, res) => {
   try {

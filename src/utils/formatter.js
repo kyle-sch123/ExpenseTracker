@@ -85,9 +85,59 @@ export function formatHelp() {
 📊 *summary* — This month's spending
 🕐 *recent* — Last 5 receipts
 🔍 *search [store]* — Find receipts by store
+💸 *expense* — Manually add an expense
 🌐 *dashboard* — Get the dashboard link
 ❓ *help* — Show this message`;
 }
+
+const CATEGORIES = [
+  'groceries', 'dining', 'shopping', 'gas',
+  'pharmacy', 'entertainment', 'utilities', 'other',
+];
+
+const PAYMENT_METHODS = ['Cash', 'Card', 'Online', 'EFT'];
+
+/**
+ * Prompt messages for the guided expense flow.
+ */
+export function formatExpensePrompt(step) {
+  switch (step) {
+    case 'start':
+      return `💸 *Add Manual Expense*\n\n💰 What's the amount? (e.g. 150.50)`;
+    case 'category':
+      return `🏷️ What category?\n${CATEGORIES.map((c, i) => `${i + 1}. ${c.charAt(0).toUpperCase() + c.slice(1)}`).join('\n')}`;
+    case 'payment':
+      return `💳 Payment method?\n${PAYMENT_METHODS.map((m, i) => `${i + 1}. ${m}`).join('\n')}`;
+    case 'merchant':
+      return `🏪 Merchant or description? (or "skip")`;
+    default:
+      return '';
+  }
+}
+
+/**
+ * Format a manually saved expense into a WhatsApp confirmation.
+ */
+export function formatManualReceipt(receipt) {
+  const date = new Date(receipt.date).toLocaleDateString('en-ZA', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
+  const total = 'R ' + Number(receipt.total).toFixed(2);
+  const category = receipt.category
+    ? receipt.category.charAt(0).toUpperCase() + receipt.category.slice(1)
+    : 'Other';
+  const payment = receipt.paymentMethod || '—';
+
+  return `✅ *Expense saved!*
+
+🏪 *${receipt.merchant}*
+💰 Total: ${total}
+📅 Date: ${date}
+🏷️ Category: ${category}
+💳 Payment: ${payment}`;
+}
+
+export { CATEGORIES, PAYMENT_METHODS };
 
 function getCategoryEmoji(category) {
   const emojis = {

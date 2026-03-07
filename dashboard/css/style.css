@@ -256,6 +256,7 @@ body::after {
 .badge-entertainment { background: rgba(250,204,21,.1);  color: #facc15; }
 .badge-utilities     { background: rgba(148,163,184,.1); color: #94a3b8; }
 .badge-other         { background: rgba(107,114,128,.1); color: #9ca3af; }
+.badge-manual        { background: rgba(99,102,241,.1);  color: #818cf8; margin-left: 4px; }
 
 /* ── RECEIPTS PAGE ───────────────────────── */
 
@@ -390,6 +391,7 @@ body::after {
 .btn-ghost:hover { background: var(--surface-2); border-color: var(--border-2); color: var(--text); }
 .btn-danger { background: transparent; color: var(--danger); border-color: transparent; }
 .btn-danger:hover { background: var(--danger-dim); border-color: var(--danger); }
+.btn-sm { padding: 5px 11px; font-size: 11px; flex: none; }
 
 /* ── PAGINATION ──────────────────────────── */
 
