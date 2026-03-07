@@ -7,6 +7,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id             String    @id @default(cuid())
+  phone          String    @unique
+  name           String?
+  dashboardToken String    @unique @default(uuid())
+  createdAt      DateTime  @default(now())
+  receipts       Receipt[]
+}
+
 model Receipt {
   id              String        @id @default(cuid())
   merchant        String
@@ -24,9 +33,12 @@ model Receipt {
   rawJson         String?
   createdAt       DateTime      @default(now())
   items           ReceiptItem[]
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
 
   @@index([date])
   @@index([category])
+  @@index([userId])
 }
 
 model ReceiptItem {

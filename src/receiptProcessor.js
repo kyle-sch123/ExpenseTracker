@@ -10,7 +10,7 @@ import prisma from './db.js';
  * @param {string} params.mimeType - image MIME type (e.g. 'image/jpeg')
  * @returns {Object} the created Receipt record (with items)
  */
-export async function processReceipt({ base64, mimeType }) {
+export async function processReceipt({ base64, mimeType, userId }) {
   const imageMime = mimeType || 'image/jpeg';
 
   // Upload image to Supabase Storage (async, non-blocking for processing)
@@ -55,6 +55,7 @@ export async function processReceipt({ base64, mimeType }) {
       paymentMethod:   extracted.payment_method || null,
       currency:        extracted.currency || 'ZAR',
       category:        extracted.category,
+      userId,
       imageUrl:        imageUrl || null,
       rawJson:         JSON.stringify(extracted),
       items: {

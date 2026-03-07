@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import { deleteImage } from '../services/storage.js';
+import { requireAuth } from '../middleware/auth.js';
 import prisma from '../db.js';
 
 const router = Router();
+
+router.use(requireAuth);
 
 // GET /api/summary?period=month|year&month=&year=
 router.get('/summary', async (req, res) => {
@@ -23,7 +26,7 @@ router.get('/summary', async (req, res) => {
     }
 
     const receipts = await prisma.receipt.findMany({
-      where: { date: { gte: startDate, lte: endDate } },
+      where: { userId: req.user.id, date: { gte: startDate, lte: endDate } },
       include: { items: true },
       orderBy: { date: 'desc' },
     });
@@ -85,6 +88,7 @@ router.post('/receipts', async (req, res) => {
         paymentMethod: paymentMethod || null,
         currency: 'ZAR',
         date: date ? new Date(date) : new Date(),
+        userId: req.user.id,
       },
     });
 
@@ -102,7 +106,7 @@ router.get('/receipts', async (req, res) => {
     const limit = Math.min(100, parseInt(req.query.limit) || 20);
     const { category, search, sort = 'date' } = req.query;
 
-    const where = {};
+    const where = { userId: req.user.id };
     if (category) where.category = category;
     if (search) {
       where.OR = [
@@ -135,8 +139,8 @@ router.get('/receipts', async (req, res) => {
 // GET /api/receipts/:id
 router.get('/receipts/:id', async (req, res) => {
   try {
-    const receipt = await prisma.receipt.findUnique({
-      where: { id: req.params.id },
+    const receipt = await prisma.receipt.findFirst({
+      where: { id: req.params.id, userId: req.user.id },
       include: { items: true },
     });
     if (!receipt) return res.status(404).json({ error: 'Receipt not found' });
@@ -159,6 +163,10 @@ router.put('/receipts/:id', async (req, res) => {
     if (tax !== undefined) data.tax = Number(tax);
     if (tip !== undefined) data.tip = Number(tip);
 
+    // Verify ownership
+    const existing = await prisma.receipt.findFirst({ where: { id: req.params.id, userId: req.user.id } });
+    if (!existing) return res.status(404).json({ error: 'Receipt not found' });
+
     const receipt = await prisma.receipt.update({
       where: { id: req.params.id },
       data,
@@ -174,7 +182,7 @@ router.put('/receipts/:id', async (req, res) => {
 // DELETE /api/receipts/:id
 router.delete('/receipts/:id', async (req, res) => {
   try {
-    const receipt = await prisma.receipt.findUnique({ where: { id: req.params.id } });
+    const receipt = await prisma.receipt.findFirst({ where: { id: req.params.id, userId: req.user.id } });
     if (!receipt) return res.status(404).json({ error: 'Receipt not found' });
 
     // Delete associated image from Supabase Storage
@@ -192,6 +200,7 @@ router.delete('/receipts/:id', async (req, res) => {
 router.get('/categories', async (req, res) => {
   try {
     const receipts = await prisma.receipt.findMany({
+      where: { userId: req.user.id },
       select: { category: true, total: true },
     });
 

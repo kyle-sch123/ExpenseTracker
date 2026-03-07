@@ -40,7 +40,7 @@ async function fetchReceipts() {
   const p = new URLSearchParams({ page: state.page, limit: state.limit, sort: state.sort });
   if (state.search)   p.set('search',   state.search);
   if (state.category) p.set('category', state.category);
-  const res = await fetch(`/api/receipts?${p}`);
+  const res = await authFetch(`/api/receipts?${p}`);
   if (!res.ok) throw new Error('Fetch failed');
   return res.json();
 }
@@ -182,7 +182,7 @@ window.goPage = function(p) {
 window.openEdit = async function(e, id) {
   e.stopPropagation();
   try {
-    const res = await fetch(`/api/receipts/${id}`);
+    const res = await authFetch(`/api/receipts/${id}`);
     if (!res.ok) throw new Error();
     const r = await res.json();
     editingId = id;
@@ -203,7 +203,7 @@ window.deleteReceipt = async function(e, id) {
   const merchant = card?.querySelector('.receipt-merchant')?.textContent || 'this receipt';
   if (!confirm(`Delete receipt from "${merchant}"?`)) return;
   try {
-    const res = await fetch(`/api/receipts/${id}`, { method: 'DELETE' });
+    const res = await authFetch(`/api/receipts/${id}`, { method: 'DELETE' });
     if (!res.ok) throw new Error();
     card?.remove();
     state.total--;
@@ -242,7 +242,7 @@ document.getElementById('editForm')?.addEventListener('submit', async e => {
     paymentMethod: document.getElementById('editPayment').value,
   };
   try {
-    const res = await fetch(`/api/receipts/${editingId}`, {
+    const res = await authFetch(`/api/receipts/${editingId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -283,7 +283,7 @@ document.getElementById('addExpenseForm')?.addEventListener('submit', async e =>
     date:          document.getElementById('addDate').value || undefined,
   };
   try {
-    const res = await fetch('/api/receipts', {
+    const res = await authFetch('/api/receipts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

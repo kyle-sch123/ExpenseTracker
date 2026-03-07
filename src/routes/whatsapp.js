@@ -3,6 +3,7 @@ import { processReceipt } from '../receiptProcessor.js';
 import { sendMessage, downloadMedia } from '../services/metaWhatsApp.js';
 import { formatReceipt, formatSummary, formatReceiptList, formatHelp, formatExpensePrompt, formatManualReceipt, CATEGORIES, PAYMENT_METHODS } from '../utils/formatter.js';
 import { getSession, setSession, clearSession } from '../services/conversationState.js';
+import { getOrCreateUser } from '../services/userService.js';
 import prisma from '../db.js';
 
 const router = Router();
@@ -51,12 +52,14 @@ router.post('/', async (req, res) => {
     const from = message.from;
     console.log(`[WhatsApp] Message from=${from} type=${message.type}`);
 
+    const user = await getOrCreateUser(from);
+
     if (message.type === 'image') {
       console.log(`[WhatsApp] Image mediaId=${message.image.id}`);
-      await handleReceiptImage(from, message.image.id);
+      await handleReceiptImage(from, message.image.id, user);
     } else if (message.type === 'text') {
       console.log(`[WhatsApp] Text body="${message.text.body}"`);
-      await handleTextCommand(from, message.text.body || '');
+      await handleTextCommand(from, message.text.body || '', user);
     } else {
       console.log(`[WhatsApp] Unhandled message type: ${message.type}`);
     }
@@ -67,7 +70,7 @@ router.post('/', async (req, res) => {
 
 // ── Handlers ───────────────────────────────────────────────────────────────
 
-async function handleReceiptImage(from, mediaId) {
+async function handleReceiptImage(from, mediaId, user) {
   try {
     console.log(`[WhatsApp] handleReceiptImage: sending ack to ${from}`);
     await sendMessage(from, '📸 Got your receipt! Processing...');
@@ -79,10 +82,10 @@ async function handleReceiptImage(from, mediaId) {
     const base64 = buffer.toString('base64');
 
     console.log('[WhatsApp] Starting receipt processing...');
-    const receipt = await processReceipt({ base64, mimeType });
+    const receipt = await processReceipt({ base64, mimeType, userId: user.id });
     console.log(`[WhatsApp] Receipt processed: id=${receipt.id} merchant="${receipt.merchant}" total=${receipt.total}`);
 
-    await sendMessage(from, formatReceipt(receipt));
+    await sendMessage(from, formatReceipt(receipt, user.dashboardToken));
     console.log('[WhatsApp] Receipt reply sent successfully');
   } catch (err) {
     console.error('[WhatsApp] Receipt processing error:', err.message, err.stack);
@@ -93,7 +96,7 @@ async function handleReceiptImage(from, mediaId) {
   }
 }
 
-async function handleTextCommand(from, body) {
+async function handleTextCommand(from, body, user) {
   const text = body.trim().toLowerCase();
 
   // Cancel active session
@@ -108,7 +111,7 @@ async function handleTextCommand(from, body) {
   // Check for active expense session first
   const session = getSession(from);
   if (session) {
-    await handleExpenseStep(from, body.trim(), session);
+    await handleExpenseStep(from, body.trim(), session, user);
     return;
   }
 
@@ -117,15 +120,15 @@ async function handleTextCommand(from, body) {
     setSession(from, { step: 'amount', data: {} });
     await sendMessage(from, formatExpensePrompt('start'));
   } else if (text === 'summary' || text === '/summary') {
-    await handleSummary(from);
+    await handleSummary(from, user);
   } else if (text.startsWith('search ') || text.startsWith('/search ')) {
     const term = text.replace(/^\/?search\s+/, '').trim();
-    await handleSearch(from, term);
+    await handleSearch(from, term, user);
   } else if (text === 'recent' || text === '/recent') {
-    await handleRecent(from);
+    await handleRecent(from, user);
   } else if (text === 'dashboard' || text === '/dashboard') {
     const url = process.env.APP_URL || 'https://your-app.onrender.com';
-    await sendMessage(from, `🌐 Your dashboard:\n${url}`);
+    await sendMessage(from, `🌐 Your dashboard:\n${url}?token=${user.dashboardToken}`);
   } else if (text === 'help' || text === '/help') {
     await sendMessage(from, formatHelp());
   } else {
@@ -135,7 +138,7 @@ async function handleTextCommand(from, body) {
 
 // ── Guided expense flow ──────────────────────────────────────────────────
 
-async function handleExpenseStep(from, input, session) {
+async function handleExpenseStep(from, input, session, user) {
   const { step, data } = session;
 
   switch (step) {
@@ -203,6 +206,7 @@ async function handleExpenseStep(from, input, session) {
             paymentMethod: data.paymentMethod,
             currency: 'ZAR',
             date: new Date(),
+            userId: user.id,
           },
         });
         clearSession(from);
@@ -217,13 +221,13 @@ async function handleExpenseStep(from, input, session) {
   }
 }
 
-async function handleSummary(from) {
+async function handleSummary(from, user) {
   const now          = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
   const receipts = await prisma.receipt.findMany({
-    where: { date: { gte: startOfMonth, lte: endOfMonth } },
+    where: { userId: user.id, date: { gte: startOfMonth, lte: endOfMonth } },
   });
 
   const totalSpent  = receipts.reduce((s, r) => s + r.total, 0);
@@ -241,7 +245,7 @@ async function handleSummary(from) {
   }));
 }
 
-async function handleSearch(from, term) {
+async function handleSearch(from, term, user) {
   if (!term || term.length < 2) {
     await sendMessage(from, 'Please provide at least 2 characters. Example: search woolworths');
     return;
@@ -249,6 +253,7 @@ async function handleSearch(from, term) {
 
   const receipts = await prisma.receipt.findMany({
     where: {
+      userId: user.id,
       OR: [
         { merchant: { contains: term, mode: 'insensitive' } },
         { items: { some: { name: { contains: term, mode: 'insensitive' } } } },
@@ -261,8 +266,9 @@ async function handleSearch(from, term) {
   await sendMessage(from, formatReceiptList(receipts, `🔍 Results for "${term}"`));
 }
 
-async function handleRecent(from) {
+async function handleRecent(from, user) {
   const receipts = await prisma.receipt.findMany({
+    where: { userId: user.id },
     orderBy: { date: 'desc' },
     take: 5,
   });

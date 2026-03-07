@@ -7,7 +7,7 @@ function currencySymbol(currency) {
 /**
  * Format a saved receipt into a WhatsApp reply message.
  */
-export function formatReceipt(receipt) {
+export function formatReceipt(receipt, dashboardToken) {
   const date = new Date(receipt.date).toLocaleDateString('en-ZA', {
     month: 'short', day: 'numeric', year: 'numeric',
   });
@@ -28,7 +28,7 @@ export function formatReceipt(receipt) {
 🏷️ Category: ${category}
 📦 Items: ${itemCount} detected
 
-View dashboard: ${process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`}`;
+View dashboard: ${process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`}${dashboardToken ? `?token=${dashboardToken}` : ''}`;
 }
 
 /**

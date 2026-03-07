@@ -47,7 +47,7 @@ function animateCount(el, target, renderFn, duration = 550) {
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
 async function fetchSummary() {
-  const res = await fetch(
+  const res = await authFetch(
     `/api/summary?period=month&month=${state.month}&year=${state.year}`
   );
   if (!res.ok) throw new Error('Failed to fetch summary');
