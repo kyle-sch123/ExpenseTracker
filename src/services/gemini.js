@@ -28,7 +28,7 @@ Return ONLY valid JSON with this exact structure (no markdown, no code fences, j
   "tip": 0.00,
   "total": 0.00,
   "payment_method": "cash/credit/debit/etc or null",
-  "currency": "USD",
+  "currency": "ZAR",
   "category": "one of: groceries|dining|shopping|gas|pharmacy|entertainment|utilities|other"
 }
 
@@ -37,6 +37,7 @@ Rules:
 - If a field is not visible on the receipt, use null
 - For items, include every line item you can read
 - Choose the most appropriate category based on the merchant type
+- Default currency is ZAR (South African Rand) — only use a different currency if it is explicitly shown on the receipt
 - If this is not a receipt, return {"error": "not_a_receipt"}`;
 
 /**
