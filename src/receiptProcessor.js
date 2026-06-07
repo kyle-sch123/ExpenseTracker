@@ -25,7 +25,9 @@ export async function processReceipt({ base64, mimeType, userId }) {
   // Validate required fields
   if (!extracted.merchant) extracted.merchant = 'Unknown Merchant';
   if (!extracted.total || isNaN(Number(extracted.total))) {
-    throw new Error('Could not extract a valid total from this receipt');
+    const e = new Error('Could not extract a valid total from this receipt');
+    e.code = 'NO_TOTAL';
+    throw e;
   }
   if (!extracted.category) extracted.category = 'other';
 

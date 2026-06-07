@@ -76,15 +76,17 @@ export async function extractReceiptData(base64Image, mimeType) {
       console.log(`[Gemini] Parsed OK: merchant="${parsed.merchant}" total=${parsed.total} category=${parsed.category}`);
 
       if (parsed.error === 'not_a_receipt') {
-        throw new Error('Image does not appear to be a receipt');
+        const e = new Error('The image does not appear to be a receipt');
+        e.code = 'NOT_A_RECEIPT';
+        throw e;
       }
 
       return parsed;
     } catch (err) {
       lastError = err;
 
-      // Don't retry on "not a receipt" or parse errors from attempt 2
-      if (err.message.includes('not a receipt')) throw err;
+      // Don't retry when the image clearly isn't a receipt
+      if (err.code === 'NOT_A_RECEIPT') throw err;
 
       // Rate limit — wait briefly before retry
       if (err.status === 429 || err.message?.includes('429')) {

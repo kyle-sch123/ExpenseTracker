@@ -89,9 +89,17 @@ async function handleReceiptImage(from, mediaId, user) {
     console.log('[WhatsApp] Receipt reply sent successfully');
   } catch (err) {
     console.error('[WhatsApp] Receipt processing error:', err.message, err.stack);
-    const msg = err.message?.includes('not a receipt')
-      ? "❌ That doesn't look like a receipt. Please send a clear photo of a receipt."
-      : '❌ Could not process that receipt. Please try again with a clearer photo.';
+    let msg;
+    switch (err.code) {
+      case 'NOT_A_RECEIPT':
+        msg = "❌ That doesn't look like a receipt. Please send a clear photo of a receipt.";
+        break;
+      case 'NO_TOTAL':
+        msg = "❌ I couldn't read the total amount on that receipt. Please send a clearer, well-lit photo showing the full receipt.";
+        break;
+      default:
+        msg = '❌ Could not process that receipt. Please try again with a clearer photo.';
+    }
     await sendMessage(from, msg).catch(e => console.error('[WhatsApp] Failed to send error reply:', e.message));
   }
 }
