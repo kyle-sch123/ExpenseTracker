@@ -1,10 +1,14 @@
 import 'dotenv/config';
 import { createServer } from './server.js';
+import { ensureAdmin } from './services/userService.js';
 import prisma from './db.js';
 
 async function main() {
   const app  = createServer();
   const port = parseInt(process.env.PORT) || 3000;
+
+  // Seed the admin account from ADMIN_PHONE (non-fatal if it fails)
+  await ensureAdmin().catch(err => console.error('[System] ensureAdmin failed:', err.message));
 
   const server = app.listen(port, () => {
     console.log(`[Server] Running on port ${port}`);

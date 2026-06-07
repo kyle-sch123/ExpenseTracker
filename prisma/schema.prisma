@@ -4,6 +4,8 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // For best connection behaviour, point this at the Supabase connection
+  // pooler (port 6543). See README → "Scaling beyond free".
   url      = env("DATABASE_URL")
 }
 
@@ -11,9 +13,35 @@ model User {
   id             String    @id @default(cuid())
   phone          String    @unique
   name           String?
+  role           String    @default("user")    // "user" | "admin"
+  status         String    @default("pending") // "pending" | "active" | "blocked"
+  welcomed       Boolean   @default(false)      // onboarding message sent once
   dashboardToken String    @unique @default(uuid())
   createdAt      DateTime  @default(now())
   receipts       Receipt[]
+}
+
+// Durable multi-step WhatsApp conversation state (survives restarts)
+model Session {
+  phone     String   @id
+  step      String
+  data      Json
+  updatedAt DateTime @updatedAt
+}
+
+// Webhook idempotency — stores Meta message IDs already handled (dedup)
+model ProcessedMessage {
+  id        String   @id // Meta's message.id
+  createdAt DateTime @default(now())
+}
+
+// Per-user daily receipt-processing counter (protects shared Gemini quota)
+model UsageDaily {
+  phone String
+  date  String // "YYYY-MM-DD"
+  count Int    @default(0)
+
+  @@id([phone, date])
 }
 
 model Receipt {

@@ -9,8 +9,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export function createServer() {
   const app = express();
 
-  // Parse JSON for API + Meta webhook
-  app.use(express.json());
+  // Parse JSON for API + Meta webhook. Capture the raw body so the webhook
+  // route can verify Meta's X-Hub-Signature-256 HMAC.
+  app.use(express.json({
+    verify: (req, _res, buf) => { req.rawBody = buf; },
+  }));
 
   // Health check — pinged by UptimeRobot to prevent Render from sleeping
   app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }));

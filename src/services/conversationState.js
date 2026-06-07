@@ -1,31 +1,32 @@
-// In-memory session tracking for multi-step WhatsApp conversations
+// Durable session tracking for multi-step WhatsApp conversations.
+// Backed by the Session table so in-progress flows survive restarts and the
+// free-tier instance sleeping. Same interface as before, but now async.
 
-const sessions = new Map();
-const timers = new Map();
+import prisma from '../db.js';
 
 const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
-export function getSession(phone) {
-  return sessions.get(phone) || null;
+export async function getSession(phone) {
+  const row = await prisma.session.findUnique({ where: { phone } });
+  if (!row) return null;
+
+  // Expire stale sessions (mirrors the old 5-minute timeout).
+  if (Date.now() - new Date(row.updatedAt).getTime() > SESSION_TIMEOUT) {
+    await prisma.session.delete({ where: { phone } }).catch(() => {});
+    return null;
+  }
+
+  return { step: row.step, data: row.data };
 }
 
-export function setSession(phone, data) {
-  // Clear existing timer
-  if (timers.has(phone)) clearTimeout(timers.get(phone));
-
-  sessions.set(phone, data);
-
-  // Auto-expire after 5 minutes
-  const timer = setTimeout(() => {
-    sessions.delete(phone);
-    timers.delete(phone);
-  }, SESSION_TIMEOUT);
-
-  timers.set(phone, timer);
+export async function setSession(phone, { step, data }) {
+  await prisma.session.upsert({
+    where:  { phone },
+    update: { step, data },
+    create: { phone, step, data },
+  });
 }
 
-export function clearSession(phone) {
-  if (timers.has(phone)) clearTimeout(timers.get(phone));
-  sessions.delete(phone);
-  timers.delete(phone);
+export async function clearSession(phone) {
+  await prisma.session.delete({ where: { phone } }).catch(() => {});
 }

@@ -12,4 +12,8 @@ services:
         value: 3000
       # Set these in the Render dashboard (Settings → Environment):
       # APP_URL, GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY,
-      # DATABASE_URL, WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, VERIFY_TOKEN
+      # DATABASE_URL, WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, VERIFY_TOKEN,
+      # META_APP_SECRET, ADMIN_PHONE, MAX_RECEIPTS_PER_DAY
+      #
+      # Tip: point DATABASE_URL at the Supabase connection pooler (port 6543,
+      # ?pgbouncer=true) for better connection behaviour.

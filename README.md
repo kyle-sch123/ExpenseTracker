@@ -12,7 +12,7 @@ Built entirely on free, cloud-hosted services.
 - 💬 **WhatsApp commands** — query your spending without leaving the chat (`summary`, `recent`, `search`, etc.).
 - 💸 **Manual expenses** — add expenses with no receipt via a guided WhatsApp flow or directly on the dashboard.
 - 📊 **Web dashboard** — monthly stats, a category donut chart, a 6-month trend chart, and a full searchable/filterable/editable receipt list.
-- 👥 **Multi-user** — each phone number is auto-registered on first contact and gets its own private dashboard, accessed by a unique token.
+- 👥 **Multi-user, admin-gated** — an admin approves/invites numbers; each approved user gets a one-time onboarding message and their own private dashboard, accessed by a unique token.
 
 ---
 
@@ -119,7 +119,38 @@ Message the bot number with any of:
 | `help`            | Show the command list                            |
 | `cancel`          | Abort an in-progress expense entry               |
 
-The guided expense flow asks for amount → category → payment method → merchant (or `skip`), then saves the expense. Sessions are held in memory and expire after 5 minutes of inactivity.
+The guided expense flow asks for amount → category → payment method → merchant (or `skip`), then saves the expense. Sessions are persisted in the database (so an in-progress entry survives a server restart) and expire after 5 minutes of inactivity.
+
+---
+
+## Access control & registration
+
+The bot is **private and admin-gated** — not anyone who messages it can use it.
+
+- The **admin** is the number in the `ADMIN_PHONE` env var, seeded automatically on startup.
+- When an **unknown number** messages the bot, it is recorded as `pending`, the sender is told to wait for approval, and the **admin is notified** with a one-tap `approve` command.
+- Only users with status `active` can track receipts or use any command.
+
+### Admin commands
+
+Send these from the admin's WhatsApp number:
+
+| Command                    | Action                                            |
+|----------------------------|---------------------------------------------------|
+| `approve <number> [name]`  | Approve a pending user (optionally set their name) |
+| `invite <number> [name]`   | Pre-approve a number before they ever message      |
+| `block <number>`           | Block a user                                       |
+| `remove <number>`          | Delete a user and all their data                   |
+| `users`                    | List all users and their status                    |
+| `adminhelp`                | Show the admin command list                        |
+
+Numbers can be typed in any format (e.g. `+27 82 123 4567`). The admin also has every normal user command.
+
+### Onboarding
+
+The first time an approved user messages the bot, they receive a **one-time welcome** explaining how it works (send a photo → automatic extraction; the command list; their private dashboard link) **and the current limitations** — one clear photo at a time (no PDFs/albums), blurry/handwritten receipts may misread, amounts default to ZAR, a daily receipt limit applies, the dashboard link is personal, and it's a tracking aid rather than an accounting/tax tool.
+
+> ⚠️ **Meta delivery limit:** While your Meta app is in development/test mode, the WhatsApp Cloud API only delivers messages to **up to 5 manually-added recipient numbers**. To onboard more people you must **publish the app with business verification and an approved display name** (still free). This is a Meta dashboard step, not something the bot can do for you.
 
 ---
 
@@ -148,12 +179,15 @@ On first load, `dashboard/js/auth.js` saves the token to `sessionStorage`, strip
 npm install
 ```
 
-Create a `.env` file (see [Environment variables](#environment-variables)):
+Create a `.env` file from the template (see [Environment variables](#environment-variables)):
 
 ```bash
-npm run db:init     # first time only — create and apply Prisma migrations
-npm start           # start the server on PORT (default 3000)
+cp .env.example .env   # then fill in your values
+npm run db:init        # first time only — create and apply Prisma migrations
+npm start              # start the server on PORT (default 3000)
 ```
+
+> Set `ADMIN_PHONE` before first start so your number is seeded as the admin.
 
 To expose your local server to Meta's webhook during development, tunnel it (e.g. with `ngrok http 3000`) and point the Meta webhook at the tunnel URL.
 
@@ -172,27 +206,31 @@ To expose your local server to Meta's webhook during development, tunnel it (e.g
 
 ## Environment variables
 
-| Variable               | Description                                                        |
-|------------------------|-------------------------------------------------------------------|
-| `APP_URL`              | Public base URL (e.g. `https://receipt-tracker-xyz.onrender.com`) |
-| `PORT`                 | Port to listen on (default `3000`)                                |
-| `GEMINI_API_KEY`       | Google Gemini API key (aistudio.google.com)                       |
-| `SUPABASE_URL`         | Supabase project URL                                              |
-| `SUPABASE_SERVICE_KEY` | Supabase service-role key                                         |
-| `DATABASE_URL`         | PostgreSQL connection string from Supabase                        |
-| `WHATSAPP_TOKEN`       | Meta app permanent access token                                   |
-| `WHATSAPP_PHONE_ID`    | Meta WhatsApp phone number ID                                     |
-| `VERIFY_TOKEN`         | Arbitrary string used to verify the webhook with Meta             |
+| Variable               | Description                                                                       |
+|------------------------|----------------------------------------------------------------------------------|
+| `APP_URL`              | Public base URL (e.g. `https://receipt-tracker-xyz.onrender.com`)                |
+| `PORT`                 | Port to listen on (default `3000`)                                               |
+| `GEMINI_API_KEY`       | Google Gemini API key (aistudio.google.com)                                      |
+| `SUPABASE_URL`         | Supabase project URL                                                             |
+| `SUPABASE_SERVICE_KEY` | Supabase service-role key                                                        |
+| `DATABASE_URL`         | PostgreSQL connection string — prefer the Supabase **pooled** URL (port 6543, `?pgbouncer=true`) |
+| `WHATSAPP_TOKEN`       | Meta app permanent access token                                                  |
+| `WHATSAPP_PHONE_ID`    | Meta WhatsApp phone number ID                                                    |
+| `VERIFY_TOKEN`         | Arbitrary string used to verify the webhook with Meta                            |
+| `META_APP_SECRET`      | Meta app secret — used to verify webhook `X-Hub-Signature-256` (optional locally) |
+| `ADMIN_PHONE`          | Admin's WhatsApp number — seeded as the active admin on startup                  |
+| `MAX_RECEIPTS_PER_DAY` | Per-user daily receipt-processing cap (default `30`)                             |
 
 ---
 
 ## Deployment (Render + Supabase + Meta)
 
-1. **Supabase** — create a project, create a **public** storage bucket named `receipts`, then copy the database URL and service-role key.
-2. **Meta** — create an app, add the WhatsApp product, and obtain a permanent access token and the phone number ID.
-3. **Render** — deploy from GitHub using `render.yaml`. Set all environment variables in the dashboard (Settings → Environment). The build runs `npm install && npm run build`, applying migrations.
+1. **Supabase** — create a project, create a **public** storage bucket named `receipts`, then copy the connection string (prefer the **pooled** URL, port 6543) and the service-role key.
+2. **Meta** — create an app, add the WhatsApp product, and obtain a permanent access token, the phone number ID, and the **app secret** (`META_APP_SECRET`, App → Settings → Basic).
+3. **Render** — deploy from GitHub using `render.yaml`. Set all environment variables in the dashboard (Settings → Environment), including `ADMIN_PHONE` and `META_APP_SECRET`. The build runs `npm install && npm run build`, applying migrations.
 4. **Webhook** — in the Meta dashboard, set the callback URL to `https://your-app.onrender.com/webhook` and the verify token to your `VERIFY_TOKEN`, then subscribe to message events.
 5. **Keep-alive** — Render's free tier sleeps after inactivity. Add an UptimeRobot monitor that pings `https://your-app.onrender.com/health` every ~5 minutes.
+6. **Go live (to onboard >5 people)** — complete Meta business verification and get a display name approved so the app can message arbitrary numbers (see the note in [Access control & registration](#access-control--registration)).
 
 ---
 
@@ -204,7 +242,7 @@ All endpoints require authentication via `?token=<dashboardToken>` or an `Author
 |----------|-----------------------|-------------------------------------------------------------------|
 | `GET`    | `/health`             | Liveness check (no auth) — used by UptimeRobot                     |
 | `GET`    | `/webhook`            | Meta webhook verification (no auth)                               |
-| `POST`   | `/webhook`            | Receive WhatsApp messages (no auth; validated via `VERIFY_TOKEN`) |
+| `POST`   | `/webhook`            | Receive WhatsApp messages (verified via `X-Hub-Signature-256` HMAC) |
 | `GET`    | `/api/summary`        | Totals, category breakdown, 6-month trend, recent receipts        |
 | `GET`    | `/api/receipts`       | Paginated list (`page`, `limit`, `category`, `search`, `sort`)     |
 | `POST`   | `/api/receipts`       | Create a manual expense (`merchant`, `total`, `category`, …)       |
@@ -220,3 +258,19 @@ All endpoints require authentication via `?token=<dashboardToken>` or an `Author
 - **Currency:** defaults to ZAR (South African Rand), displayed as `R`, with `en-ZA` date formatting.
 - **Image storage:** `Receipt.imageUrl` holds a Supabase public URL; image upload failures are non-fatal (the receipt is still saved).
 - **Lightweight:** no headless browser or `whatsapp-web.js` — just the Meta Cloud API over HTTP.
+- **Robustness:** incoming webhooks are deduplicated (Meta retries won't create duplicate receipts), conversation state lives in the DB (survives restarts), and the webhook signature is verified.
+
+---
+
+## Scaling beyond free
+
+This project is built to run comfortably for a small group (≈ <20 users) entirely on free tiers. The known free-tier ceilings and how to lift them when you outgrow them:
+
+| Bottleneck                                   | Free-tier limit                  | Upgrade path                                                                 |
+|----------------------------------------------|----------------------------------|------------------------------------------------------------------------------|
+| Gemini extraction quota                      | 250 requests/day (shared key)    | Move to a paid Gemini key, or rotate multiple keys. `MAX_RECEIPTS_PER_DAY` throttles per user in the meantime. |
+| Render instance sleeps / single instance     | Sleeps after ~15 min idle        | Upgrade to a paid Render instance (no sleep, more RAM); UptimeRobot only masks sleep. |
+| Supabase connections                         | Limited direct connections       | Point `DATABASE_URL` at the Supabase **connection pooler** (port 6543, `?pgbouncer=true`). |
+| Burst load on the webhook                     | Processed inline in-process      | Introduce a job queue/worker (e.g. BullMQ + Redis) so extraction runs async. |
+
+The current architecture keeps all of these as **configuration/add-on changes**, not rewrites.

@@ -137,6 +137,90 @@ export function formatManualReceipt(receipt) {
 💳 Payment: ${payment}`;
 }
 
+function dashboardUrl(token) {
+  const base = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+  return token ? `${base}?token=${token}` : base;
+}
+
+/**
+ * One-time onboarding message: explains how the bot works AND its hard limits.
+ */
+export function formatWelcome(user) {
+  const name = user?.name ? ` ${user.name}` : '';
+  const dailyLimit = parseInt(process.env.MAX_RECEIPTS_PER_DAY) || 30;
+
+  return `👋 *Welcome${name}! You're all set.*
+
+I'm your personal receipt & expense tracker.
+
+*How it works*
+📸 Send a *photo of a receipt* and I'll automatically read the merchant, items, and total, then save it for you.
+💸 No receipt? Type *expense* to add one manually.
+
+*Commands*
+📊 *summary* — this month's spending
+🕐 *recent* — your last 5 receipts
+🔍 *search [store]* — find receipts
+🌐 *dashboard* — your private web dashboard
+❓ *help* — show commands
+✋ *cancel* — stop adding an expense
+
+🌐 *Your private dashboard:*
+${dashboardUrl(user?.dashboardToken)}
+
+*Please note (current limits)*
+• One *clear photo* at a time — no PDFs, multi-page docs, or photo albums.
+• Works best on clear, well-lit, single-currency receipts. Blurry or handwritten ones may fail or be misread — always double-check and edit on the dashboard.
+• Amounts default to *ZAR (R)*; other currencies only if printed on the receipt.
+• Up to *${dailyLimit} receipts per day* (shared free quota).
+• Your data is *private to your number* — your dashboard link is personal, don't share it.
+• This is a tracking aid, *not* an accounting or tax tool — verify before relying on totals.
+
+Send a receipt photo to get started! 📸`;
+}
+
+/**
+ * Message for numbers that aren't approved yet.
+ */
+export function formatNotAuthorized() {
+  return `⏳ *You're not registered yet.*
+
+This is a private receipt tracker. Please ask the admin to approve your number, then message me again.`;
+}
+
+/**
+ * Admin command reference.
+ */
+export function formatAdminHelp() {
+  return `🛠️ *Admin Commands*
+
+✅ *approve <number> [name]* — approve a pending user
+✉️ *invite <number> [name]* — pre-approve a number
+🚫 *block <number>* — block a user
+🗑️ *remove <number>* — delete a user and their data
+👥 *users* — list all users
+❓ *adminhelp* — show this message
+
+_Numbers can be in any format, e.g. +27 82 123 4567._
+You also have all normal user commands.`;
+}
+
+/**
+ * Format the user list for the admin.
+ */
+export function formatUserList(users) {
+  if (!users.length) return '👥 No users yet.';
+
+  const icon = { active: '✅', pending: '⏳', blocked: '🚫' };
+  const lines = users.map(u => {
+    const tag  = u.role === 'admin' ? ' (admin)' : '';
+    const name = u.name ? ` ${u.name}` : '';
+    return `${icon[u.status] || '•'} +${u.phone}${name}${tag}`;
+  });
+
+  return `👥 *Users (${users.length})*\n\n${lines.join('\n')}`;
+}
+
 export { CATEGORIES, PAYMENT_METHODS };
 
 function getCategoryEmoji(category) {

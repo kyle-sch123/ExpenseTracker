@@ -1,9 +1,18 @@
 import { Router } from 'express';
 import { processReceipt } from '../receiptProcessor.js';
 import { sendMessage, downloadMedia } from '../services/metaWhatsApp.js';
-import { formatReceipt, formatSummary, formatReceiptList, formatHelp, formatExpensePrompt, formatManualReceipt, CATEGORIES, PAYMENT_METHODS } from '../utils/formatter.js';
+import {
+  formatReceipt, formatSummary, formatReceiptList, formatHelp,
+  formatExpensePrompt, formatManualReceipt, formatWelcome,
+  formatNotAuthorized, formatAdminHelp, formatUserList,
+  CATEGORIES, PAYMENT_METHODS,
+} from '../utils/formatter.js';
 import { getSession, setSession, clearSession } from '../services/conversationState.js';
-import { getOrCreateUser } from '../services/userService.js';
+import {
+  getUser, registerPending, setStatus, deleteUser, listUsers,
+  markWelcomed, isAdmin, normalizePhone, checkAndBumpDailyUsage,
+} from '../services/userService.js';
+import { verifyWhatsappSignature } from '../middleware/whatsappSignature.js';
 import prisma from '../db.js';
 
 const router = Router();
@@ -26,11 +35,9 @@ router.get('/', (req, res) => {
 
 // ── Receive messages (POST) ────────────────────────────────────────────────
 
-router.post('/', async (req, res) => {
+router.post('/', verifyWhatsappSignature, async (req, res) => {
   // Acknowledge immediately — Meta requires a 200 within 20s
   res.sendStatus(200);
-
-  console.log('[WhatsApp] Webhook POST received. Body:', JSON.stringify(req.body, null, 2));
 
   try {
     const entry   = req.body?.entry?.[0];
@@ -38,10 +45,7 @@ router.post('/', async (req, res) => {
     const value   = changes?.value;
 
     // Ignore status updates
-    if (value?.statuses) {
-      console.log('[WhatsApp] Ignoring status update');
-      return;
-    }
+    if (value?.statuses) return;
 
     const message = value?.messages?.[0];
     if (!message) {
@@ -49,16 +53,51 @@ router.post('/', async (req, res) => {
       return;
     }
 
-    const from = message.from;
+    // ── Deduplication: Meta retries deliveries; process each message once ──
+    if (message.id) {
+      try {
+        await prisma.processedMessage.create({ data: { id: message.id } });
+      } catch (err) {
+        if (err.code === 'P2002') {
+          console.log(`[WhatsApp] Duplicate delivery ${message.id} — skipping`);
+          return;
+        }
+        console.warn('[WhatsApp] Dedup check failed (continuing):', err.message);
+      }
+    }
+
+    const from        = message.from;
+    const profileName = value?.contacts?.[0]?.profile?.name;
     console.log(`[WhatsApp] Message from=${from} type=${message.type}`);
 
-    const user = await getOrCreateUser(from);
+    const user = await getUser(from);
 
+    // ── Registration gate ──────────────────────────────────────────────────
+    if (!user || user.status !== 'active') {
+      if (!user) {
+        await registerPending(from, profileName);
+        await notifyAdmin(from, profileName);
+      }
+      await sendMessage(from, formatNotAuthorized());
+      return;
+    }
+
+    // ── One-time onboarding message ────────────────────────────────────────
+    if (!user.welcomed) {
+      await sendMessage(from, formatWelcome(user));
+      await markWelcomed(from);
+    }
+
+    // ── Admin commands ─────────────────────────────────────────────────────
+    if (isAdmin(user) && message.type === 'text') {
+      const handled = await handleAdminCommand(from, message.text.body || '');
+      if (handled) return;
+    }
+
+    // ── Normal handling ────────────────────────────────────────────────────
     if (message.type === 'image') {
-      console.log(`[WhatsApp] Image mediaId=${message.image.id}`);
-      await handleReceiptImage(from, message.image.id, user);
+      await handleReceiptImage(from, message.image.id);
     } else if (message.type === 'text') {
-      console.log(`[WhatsApp] Text body="${message.text.body}"`);
       await handleTextCommand(from, message.text.body || '', user);
     } else {
       console.log(`[WhatsApp] Unhandled message type: ${message.type}`);
@@ -68,25 +107,94 @@ router.post('/', async (req, res) => {
   }
 });
 
+// ── Admin ──────────────────────────────────────────────────────────────────
+
+async function notifyAdmin(from, profileName) {
+  const adminPhone = normalizePhone(process.env.ADMIN_PHONE);
+  if (!adminPhone || adminPhone === normalizePhone(from)) return;
+  const name = profileName ? `${profileName} ` : '';
+  await sendMessage(
+    adminPhone,
+    `👤 *New access request*\n${name}+${from}\n\nReply *approve ${from}* to grant access.`
+  ).catch(e => console.error('[WhatsApp] Failed to notify admin:', e.message));
+}
+
+/**
+ * Handle an admin command. Returns true if the text was an admin command
+ * (and was handled), false if it should fall through to normal commands.
+ */
+async function handleAdminCommand(from, body) {
+  const parts = body.trim().split(/\s+/);
+  const verb  = parts[0]?.toLowerCase();
+  const arg   = parts[1];
+  const name  = parts.slice(2).join(' ') || undefined;
+
+  switch (verb) {
+    case 'approve': {
+      if (!arg) { await sendMessage(from, 'Usage: approve <number> [name]'); return true; }
+      const target = normalizePhone(arg);
+      await setStatus(target, 'active', name);
+      await sendMessage(from, `✅ Approved +${target}. They'll be welcomed when they next message.`);
+      // Best-effort heads-up (only works inside the 24h window)
+      await sendMessage(target, '✅ You have been approved! Message me to get started.').catch(() => {});
+      return true;
+    }
+    case 'invite': {
+      if (!arg) { await sendMessage(from, 'Usage: invite <number> [name]'); return true; }
+      const target = normalizePhone(arg);
+      await setStatus(target, 'active', name);
+      await sendMessage(from, `✉️ Invited +${target}. They'll be welcomed when they first message me.`);
+      return true;
+    }
+    case 'block': {
+      if (!arg) { await sendMessage(from, 'Usage: block <number>'); return true; }
+      const target = normalizePhone(arg);
+      await setStatus(target, 'blocked');
+      await sendMessage(from, `🚫 Blocked +${target}.`);
+      return true;
+    }
+    case 'remove': {
+      if (!arg) { await sendMessage(from, 'Usage: remove <number>'); return true; }
+      const target  = normalizePhone(arg);
+      const deleted = await deleteUser(target);
+      await sendMessage(from, deleted ? `🗑️ Removed +${target} and their data.` : `No user found for +${target}.`);
+      return true;
+    }
+    case 'users': {
+      const users = await listUsers();
+      await sendMessage(from, formatUserList(users));
+      return true;
+    }
+    case 'adminhelp': {
+      await sendMessage(from, formatAdminHelp());
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
 // ── Handlers ───────────────────────────────────────────────────────────────
 
-async function handleReceiptImage(from, mediaId, user) {
+async function handleReceiptImage(from, mediaId) {
   try {
-    console.log(`[WhatsApp] handleReceiptImage: sending ack to ${from}`);
+    // Per-user daily cap — protects the shared Gemini free quota
+    const usage = await checkAndBumpDailyUsage(from);
+    if (!usage.allowed) {
+      await sendMessage(from, `📷 You've hit today's limit of ${usage.limit} receipts. Please try again tomorrow.`);
+      return;
+    }
+
     await sendMessage(from, '📸 Got your receipt! Processing...');
 
-    console.log(`[WhatsApp] Downloading media ${mediaId}...`);
     const { buffer, mimeType } = await downloadMedia(mediaId);
-    console.log(`[WhatsApp] Downloaded media: ${buffer.length} bytes, mimeType=${mimeType}`);
-
     const base64 = buffer.toString('base64');
 
-    console.log('[WhatsApp] Starting receipt processing...');
+    const user    = await getUser(from);
     const receipt = await processReceipt({ base64, mimeType, userId: user.id });
     console.log(`[WhatsApp] Receipt processed: id=${receipt.id} merchant="${receipt.merchant}" total=${receipt.total}`);
 
     await sendMessage(from, formatReceipt(receipt, user.dashboardToken));
-    console.log('[WhatsApp] Receipt reply sent successfully');
   } catch (err) {
     console.error('[WhatsApp] Receipt processing error:', err.message, err.stack);
     let msg;
@@ -96,6 +204,9 @@ async function handleReceiptImage(from, mediaId, user) {
         break;
       case 'NO_TOTAL':
         msg = "❌ I couldn't read the total amount on that receipt. Please send a clearer, well-lit photo showing the full receipt.";
+        break;
+      case 'QUOTA_EXCEEDED':
+        msg = "⏳ I'm a bit busy right now (daily processing quota reached). Please try again later.";
         break;
       default:
         msg = '❌ Could not process that receipt. Please try again with a clearer photo.';
@@ -109,15 +220,15 @@ async function handleTextCommand(from, body, user) {
 
   // Cancel active session
   if (text === 'cancel') {
-    if (getSession(from)) {
-      clearSession(from);
+    if (await getSession(from)) {
+      await clearSession(from);
       await sendMessage(from, '❌ Expense entry cancelled.');
       return;
     }
   }
 
   // Check for active expense session first
-  const session = getSession(from);
+  const session = await getSession(from);
   if (session) {
     await handleExpenseStep(from, body.trim(), session, user);
     return;
@@ -125,7 +236,7 @@ async function handleTextCommand(from, body, user) {
 
   // Start expense flow
   if (text === 'expense' || text === 'add' || text === '/expense' || text === '/add') {
-    setSession(from, { step: 'amount', data: {} });
+    await setSession(from, { step: 'amount', data: {} });
     await sendMessage(from, formatExpensePrompt('start'));
   } else if (text === 'summary' || text === '/summary') {
     await handleSummary(from, user);
@@ -157,7 +268,7 @@ async function handleExpenseStep(from, input, session, user) {
         return;
       }
       data.amount = amount;
-      setSession(from, { step: 'category', data });
+      await setSession(from, { step: 'category', data });
       await sendMessage(from, formatExpensePrompt('category'));
       break;
     }
@@ -176,7 +287,7 @@ async function handleExpenseStep(from, input, session, user) {
         return;
       }
       data.category = category;
-      setSession(from, { step: 'payment', data });
+      await setSession(from, { step: 'payment', data });
       await sendMessage(from, formatExpensePrompt('payment'));
       break;
     }
@@ -195,7 +306,7 @@ async function handleExpenseStep(from, input, session, user) {
         return;
       }
       data.paymentMethod = payment;
-      setSession(from, { step: 'merchant', data });
+      await setSession(from, { step: 'merchant', data });
       await sendMessage(from, formatExpensePrompt('merchant'));
       break;
     }
@@ -217,11 +328,11 @@ async function handleExpenseStep(from, input, session, user) {
             userId: user.id,
           },
         });
-        clearSession(from);
+        await clearSession(from);
         await sendMessage(from, formatManualReceipt(receipt));
       } catch (err) {
         console.error('[WhatsApp] Manual expense save error:', err);
-        clearSession(from);
+        await clearSession(from);
         await sendMessage(from, '❌ Failed to save expense. Please try again.');
       }
       break;

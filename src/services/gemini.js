@@ -103,5 +103,9 @@ export async function extractReceiptData(base64Image, mimeType) {
     }
   }
 
+  // Tag quota/rate-limit failures so the caller can show a friendly message.
+  if (lastError && (lastError.status === 429 || lastError.message?.includes('429'))) {
+    lastError.code = 'QUOTA_EXCEEDED';
+  }
   throw lastError;
 }
