@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import apiRouter from './routes/api.js';
 import whatsappRouter from './routes/whatsapp.js';
+import prisma from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -15,8 +16,24 @@ export function createServer() {
     verify: (req, _res, buf) => { req.rawBody = buf; },
   }));
 
-  // Health check — pinged by UptimeRobot to prevent Render from sleeping
-  app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }));
+  // Health check — pinged by UptimeRobot to prevent Render from sleeping.
+  // Also writes a sentinel row to the DB on each ping so the (free-tier
+  // Supabase) database stays active and isn't paused for inactivity.
+  app.get('/health', async (_req, res) => {
+    const ts = Date.now();
+    let db = 'ok';
+    try {
+      await prisma.session.upsert({
+        where: { phone: '__healthcheck__' },
+        update: { step: 'healthcheck', data: { ts } },
+        create: { phone: '__healthcheck__', step: 'healthcheck', data: { ts } },
+      });
+    } catch (err) {
+      db = 'error';
+      console.error('[health] DB keepalive write failed:', err.message);
+    }
+    res.json({ status: 'ok', db, ts });
+  });
 
   // Meta WhatsApp Cloud API webhook
   app.use('/webhook', whatsappRouter);
